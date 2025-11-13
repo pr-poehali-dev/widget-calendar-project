@@ -9,8 +9,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 type EventType = 'event' | 'task' | 'reminder';
+type ViewType = 'month' | 'week' | 'day';
 
 interface CalendarItem {
   id: string;
@@ -24,13 +26,14 @@ interface CalendarItem {
 
 interface Widget {
   id: string;
-  type: 'weather' | 'stats' | 'notes' | 'upcoming';
+  type: 'stats' | 'notes' | 'upcoming' | 'focus' | 'timeline';
   enabled: boolean;
 }
 
 const Index = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [viewType, setViewType] = useState<ViewType>('month');
   const [items, setItems] = useState<CalendarItem[]>([
     {
       id: '1',
@@ -44,23 +47,32 @@ const Index = () => {
       id: '2',
       title: 'Завершить отчёт',
       type: 'task',
-      date: new Date(2025, 10, 16),
+      date: new Date(2025, 10, 15, 14, 0),
+      time: '14:00',
       completed: false
     },
     {
       id: '3',
       title: 'Позвонить клиенту',
       type: 'reminder',
-      date: new Date(2025, 10, 17, 14, 30),
-      time: '14:30'
+      date: new Date(2025, 10, 15, 16, 30),
+      time: '16:30'
+    },
+    {
+      id: '4',
+      title: 'Обед с партнёрами',
+      type: 'event',
+      date: new Date(2025, 10, 16, 13, 0),
+      time: '13:00'
     }
   ]);
   
   const [widgets, setWidgets] = useState<Widget[]>([
-    { id: '1', type: 'weather', enabled: true },
     { id: '2', type: 'stats', enabled: true },
     { id: '3', type: 'notes', enabled: true },
-    { id: '4', type: 'upcoming', enabled: true }
+    { id: '4', type: 'upcoming', enabled: true },
+    { id: '5', type: 'focus', enabled: true },
+    { id: '6', type: 'timeline', enabled: true }
   ]);
 
   const [newItem, setNewItem] = useState<Partial<CalendarItem>>({});
@@ -68,6 +80,7 @@ const Index = () => {
 
   const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
   const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+  const fullDayNames = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 
   const getDaysInMonth = (date: Date) => {
     const year = date.getFullYear();
@@ -87,17 +100,45 @@ const Index = () => {
     return days;
   };
 
-  const getItemsForDate = (day: number) => {
-    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+  const getWeekDays = (date: Date) => {
+    const dayOfWeek = (date.getDay() + 6) % 7;
+    const startOfWeek = new Date(date);
+    startOfWeek.setDate(date.getDate() - dayOfWeek);
+    
+    const weekDays = [];
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(startOfWeek);
+      day.setDate(startOfWeek.getDate() + i);
+      weekDays.push(day);
+    }
+    return weekDays;
+  };
+
+  const getItemsForDate = (date: Date) => {
     return items.filter(item => 
-      item.date.getDate() === day &&
-      item.date.getMonth() === currentDate.getMonth() &&
-      item.date.getFullYear() === currentDate.getFullYear()
+      item.date.getDate() === date.getDate() &&
+      item.date.getMonth() === date.getMonth() &&
+      item.date.getFullYear() === date.getFullYear()
     );
   };
 
-  const changeMonth = (delta: number) => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + delta, 1));
+  const getItemsForDay = (day: number) => {
+    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    return getItemsForDate(date);
+  };
+
+  const changeDate = (delta: number) => {
+    if (viewType === 'month') {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + delta, 1));
+    } else if (viewType === 'week') {
+      const newDate = new Date(currentDate);
+      newDate.setDate(currentDate.getDate() + (delta * 7));
+      setCurrentDate(newDate);
+    } else {
+      const newDate = new Date(currentDate);
+      newDate.setDate(currentDate.getDate() + delta);
+      setCurrentDate(newDate);
+    }
   };
 
   const getTypeColor = (type: EventType) => {
@@ -141,156 +182,308 @@ const Index = () => {
   const completedTasks = items.filter(item => item.type === 'task' && item.completed).length;
   const totalTasks = items.filter(item => item.type === 'task').length;
 
+  const getTodayItems = () => {
+    const today = viewType === 'day' ? currentDate : new Date();
+    return getItemsForDate(today).sort((a, b) => {
+      if (!a.time) return 1;
+      if (!b.time) return -1;
+      return a.time.localeCompare(b.time);
+    });
+  };
+
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+
+  const getItemAtHour = (date: Date, hour: number) => {
+    return items.filter(item => {
+      if (!item.time) return false;
+      const itemHour = parseInt(item.time.split(':')[0]);
+      return item.date.getDate() === date.getDate() &&
+             item.date.getMonth() === date.getMonth() &&
+             item.date.getFullYear() === date.getFullYear() &&
+             itemHour === hour;
+    });
+  };
+
+  const getCurrentViewTitle = () => {
+    if (viewType === 'month') {
+      return `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+    } else if (viewType === 'week') {
+      const weekDays = getWeekDays(currentDate);
+      const start = weekDays[0];
+      const end = weekDays[6];
+      return `${start.getDate()} ${monthNames[start.getMonth()]} - ${end.getDate()} ${monthNames[end.getMonth()]} ${currentDate.getFullYear()}`;
+    } else {
+      const dayOfWeek = (currentDate.getDay() + 6) % 7;
+      return `${fullDayNames[dayOfWeek]}, ${currentDate.getDate()} ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8 animate-fade-in">
-          <div>
-            <h1 className="text-4xl font-bold text-gray-900">Календарь</h1>
-            <p className="text-gray-500 mt-1">Управляйте вашим временем эффективно</p>
+        <div className="flex flex-col gap-4 mb-8 animate-fade-in">
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900">Календарь</h1>
+              <p className="text-gray-500 mt-1">Управляйте вашим временем эффективно</p>
+            </div>
+            <div className="flex gap-3">
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button className="gap-2">
+                    <Icon name="Plus" size={18} />
+                    Добавить
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Новая запись</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 mt-4">
+                    <div>
+                      <Label>Название</Label>
+                      <Input 
+                        placeholder="Введите название"
+                        value={newItem.title || ''}
+                        onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label>Тип</Label>
+                      <Select onValueChange={(value: EventType) => setNewItem({ ...newItem, type: value })}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Выберите тип" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="event">Событие</SelectItem>
+                          <SelectItem value="task">Задача</SelectItem>
+                          <SelectItem value="reminder">Напоминание</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Дата</Label>
+                      <Input 
+                        type="date"
+                        onChange={(e) => setNewItem({ ...newItem, date: new Date(e.target.value) })}
+                      />
+                    </div>
+                    <div>
+                      <Label>Время (опционально)</Label>
+                      <Input 
+                        type="time"
+                        onChange={(e) => setNewItem({ ...newItem, time: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label>Описание (опционально)</Label>
+                      <Textarea 
+                        placeholder="Добавьте детали..."
+                        value={newItem.description || ''}
+                        onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
+                      />
+                    </div>
+                    <Button onClick={addItem} className="w-full">Создать</Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+              <Button 
+                variant="outline" 
+                size="icon"
+                onClick={() => setShowSettings(!showSettings)}
+              >
+                <Icon name="Settings" size={18} />
+              </Button>
+            </div>
           </div>
-          <div className="flex gap-3">
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button className="gap-2">
-                  <Icon name="Plus" size={18} />
-                  Добавить
+
+          <div className="flex justify-between items-center">
+            <Tabs value={viewType} onValueChange={(v) => setViewType(v as ViewType)} className="w-auto">
+              <TabsList>
+                <TabsTrigger value="month" className="gap-2">
+                  <Icon name="Calendar" size={16} />
+                  Месяц
+                </TabsTrigger>
+                <TabsTrigger value="week" className="gap-2">
+                  <Icon name="CalendarDays" size={16} />
+                  Неделя
+                </TabsTrigger>
+                <TabsTrigger value="day" className="gap-2">
+                  <Icon name="CalendarClock" size={16} />
+                  День
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())}>
+                Сегодня
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="icon" onClick={() => changeDate(-1)}>
+                  <Icon name="ChevronLeft" size={20} />
                 </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Новая запись</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 mt-4">
-                  <div>
-                    <Label>Название</Label>
-                    <Input 
-                      placeholder="Введите название"
-                      value={newItem.title || ''}
-                      onChange={(e) => setNewItem({ ...newItem, title: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label>Тип</Label>
-                    <Select onValueChange={(value: EventType) => setNewItem({ ...newItem, type: value })}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Выберите тип" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="event">Событие</SelectItem>
-                        <SelectItem value="task">Задача</SelectItem>
-                        <SelectItem value="reminder">Напоминание</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Дата</Label>
-                    <Input 
-                      type="date"
-                      onChange={(e) => setNewItem({ ...newItem, date: new Date(e.target.value) })}
-                    />
-                  </div>
-                  <div>
-                    <Label>Время (опционально)</Label>
-                    <Input 
-                      type="time"
-                      onChange={(e) => setNewItem({ ...newItem, time: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <Label>Описание (опционально)</Label>
-                    <Textarea 
-                      placeholder="Добавьте детали..."
-                      value={newItem.description || ''}
-                      onChange={(e) => setNewItem({ ...newItem, description: e.target.value })}
-                    />
-                  </div>
-                  <Button onClick={addItem} className="w-full">Создать</Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-            <Button 
-              variant="outline" 
-              size="icon"
-              onClick={() => setShowSettings(!showSettings)}
-            >
-              <Icon name="Settings" size={18} />
-            </Button>
+                <Button variant="ghost" size="icon" onClick={() => changeDate(1)}>
+                  <Icon name="ChevronRight" size={20} />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-xl font-semibold text-gray-700">
+            {getCurrentViewTitle()}
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
-            <Card className="shadow-lg animate-scale-in">
-              <CardHeader className="border-b bg-white/50">
-                <div className="flex justify-between items-center">
-                  <CardTitle className="text-2xl">
-                    {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
-                  </CardTitle>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => changeMonth(-1)}>
-                      <Icon name="ChevronLeft" size={20} />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => setCurrentDate(new Date())}>
-                      <Icon name="Calendar" size={20} />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => changeMonth(1)}>
-                      <Icon name="ChevronRight" size={20} />
-                    </Button>
+            {viewType === 'month' && (
+              <Card className="shadow-lg animate-scale-in">
+                <CardContent className="p-4">
+                  <div className="grid grid-cols-7 gap-2 mb-3">
+                    {dayNames.map((day) => (
+                      <div key={day} className="text-center font-medium text-sm text-gray-500 py-2">
+                        {day}
+                      </div>
+                    ))}
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-4">
-                <div className="grid grid-cols-7 gap-2 mb-3">
-                  {dayNames.map((day) => (
-                    <div key={day} className="text-center font-medium text-sm text-gray-500 py-2">
-                      {day}
-                    </div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-2">
-                  {getDaysInMonth(currentDate).map((day, index) => {
-                    const dayItems = day ? getItemsForDate(day) : [];
-                    const isToday = day === new Date().getDate() && 
-                                   currentDate.getMonth() === new Date().getMonth() &&
-                                   currentDate.getFullYear() === new Date().getFullYear();
-                    
-                    return (
-                      <button
-                        key={index}
-                        className={`
-                          min-h-[80px] p-2 rounded-lg border transition-all hover:shadow-md
-                          ${day ? 'bg-white hover:bg-gray-50' : 'bg-transparent border-transparent'}
-                          ${isToday ? 'border-primary border-2 bg-accent' : 'border-gray-200'}
-                        `}
-                        onClick={() => day && setSelectedDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), day))}
-                      >
-                        {day && (
-                          <>
-                            <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>
-                              {day}
+                  <div className="grid grid-cols-7 gap-2">
+                    {getDaysInMonth(currentDate).map((day, index) => {
+                      const dayItems = day ? getItemsForDay(day) : [];
+                      const isToday = day === new Date().getDate() && 
+                                     currentDate.getMonth() === new Date().getMonth() &&
+                                     currentDate.getFullYear() === new Date().getFullYear();
+                      
+                      return (
+                        <button
+                          key={index}
+                          className={`
+                            min-h-[80px] p-2 rounded-lg border transition-all hover:shadow-md
+                            ${day ? 'bg-white hover:bg-gray-50' : 'bg-transparent border-transparent'}
+                            ${isToday ? 'border-primary border-2 bg-accent' : 'border-gray-200'}
+                          `}
+                          onClick={() => day && setSelectedDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), day))}
+                        >
+                          {day && (
+                            <>
+                              <div className={`text-sm font-semibold mb-1 ${isToday ? 'text-primary' : 'text-gray-700'}`}>
+                                {day}
+                              </div>
+                              <div className="space-y-1">
+                                {dayItems.slice(0, 2).map((item) => (
+                                  <div 
+                                    key={item.id}
+                                    className={`text-xs px-1.5 py-0.5 rounded border ${getTypeColor(item.type)} truncate`}
+                                  >
+                                    {item.title}
+                                  </div>
+                                ))}
+                                {dayItems.length > 2 && (
+                                  <div className="text-xs text-gray-500">+{dayItems.length - 2}</div>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {viewType === 'week' && (
+              <Card className="shadow-lg animate-scale-in">
+                <CardContent className="p-4">
+                  <div className="grid grid-cols-7 gap-2">
+                    {getWeekDays(currentDate).map((date, index) => {
+                      const dayItems = getItemsForDate(date);
+                      const isToday = date.toDateString() === new Date().toDateString();
+                      
+                      return (
+                        <div key={index} className="flex flex-col">
+                          <div className={`text-center p-3 rounded-t-lg border-b-2 ${isToday ? 'bg-accent border-primary' : 'bg-white border-gray-200'}`}>
+                            <div className="text-xs text-gray-500 uppercase">{dayNames[index]}</div>
+                            <div className={`text-2xl font-bold ${isToday ? 'text-primary' : 'text-gray-700'}`}>
+                              {date.getDate()}
                             </div>
-                            <div className="space-y-1">
-                              {dayItems.slice(0, 2).map((item) => (
-                                <div 
-                                  key={item.id}
-                                  className={`text-xs px-1.5 py-0.5 rounded border ${getTypeColor(item.type)} truncate`}
-                                >
-                                  {item.title}
-                                </div>
-                              ))}
-                              {dayItems.length > 2 && (
-                                <div className="text-xs text-gray-500">+{dayItems.length - 2}</div>
-                              )}
-                            </div>
-                          </>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
+                          </div>
+                          <div className="bg-white border border-t-0 rounded-b-lg p-2 min-h-[200px] space-y-2">
+                            {dayItems.map((item) => (
+                              <div 
+                                key={item.id}
+                                className={`text-xs p-2 rounded border ${getTypeColor(item.type)}`}
+                              >
+                                <div className="font-semibold truncate">{item.title}</div>
+                                {item.time && <div className="text-xs mt-1">{item.time}</div>}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {viewType === 'day' && (
+              <Card className="shadow-lg animate-scale-in">
+                <CardContent className="p-4">
+                  <div className="space-y-1 max-h-[600px] overflow-y-auto">
+                    {hours.map((hour) => {
+                      const hourItems = getItemAtHour(currentDate, hour);
+                      const timeStr = `${hour.toString().padStart(2, '0')}:00`;
+                      
+                      return (
+                        <div key={hour} className="flex gap-3 border-b border-gray-100 py-2">
+                          <div className="w-16 text-sm text-gray-500 font-medium pt-1">
+                            {timeStr}
+                          </div>
+                          <div className="flex-1">
+                            {hourItems.length > 0 ? (
+                              <div className="space-y-2">
+                                {hourItems.map((item) => (
+                                  <div 
+                                    key={item.id}
+                                    className={`p-3 rounded-lg border ${getTypeColor(item.type)} flex items-start gap-3`}
+                                  >
+                                    <Icon name={getTypeIcon(item.type)} size={16} />
+                                    <div className="flex-1">
+                                      <div className="font-semibold">{item.title}</div>
+                                      {item.description && (
+                                        <div className="text-xs mt-1 opacity-80">{item.description}</div>
+                                      )}
+                                      {item.time && <div className="text-xs mt-1">{item.time}</div>}
+                                    </div>
+                                    {item.type === 'task' && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 px-2"
+                                        onClick={() => toggleTask(item.id)}
+                                      >
+                                        <Icon 
+                                          name={item.completed ? "CheckCircle2" : "Circle"} 
+                                          size={16}
+                                          className={item.completed ? "text-green-600" : ""}
+                                        />
+                                      </Button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="h-12" />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           <div className="space-y-6">
@@ -306,10 +499,11 @@ const Index = () => {
                   {widgets.map((widget) => (
                     <div key={widget.id} className="flex items-center justify-between">
                       <Label className="capitalize">
-                        {widget.type === 'weather' && '☁️ Погода'}
                         {widget.type === 'stats' && '📊 Статистика'}
                         {widget.type === 'notes' && '📝 Заметки'}
                         {widget.type === 'upcoming' && '📅 Предстоящее'}
+                        {widget.type === 'focus' && '🎯 Фокус дня'}
+                        {widget.type === 'timeline' && '⏱️ Временная шкала'}
                       </Label>
                       <Switch 
                         checked={widget.enabled}
@@ -366,7 +560,71 @@ const Index = () => {
               </Card>
             )}
 
-            {widgets.find(w => w.type === 'upcoming' && w.enabled) && (
+            {widgets.find(w => w.type === 'focus' && w.enabled) && viewType === 'day' && (
+              <Card className="shadow-lg animate-scale-in bg-gradient-to-br from-primary/5 to-purple-50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Icon name="Target" size={20} />
+                    Фокус дня
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {getTodayItems().slice(0, 3).map((item) => (
+                      <div key={item.id} className="flex items-center gap-3 p-3 bg-white rounded-lg border">
+                        <div className={`p-2 rounded-lg ${getTypeColor(item.type)}`}>
+                          <Icon name={getTypeIcon(item.type)} size={16} />
+                        </div>
+                        <div className="flex-1">
+                          <div className="font-medium text-sm">{item.title}</div>
+                          {item.time && <div className="text-xs text-gray-500">{item.time}</div>}
+                        </div>
+                      </div>
+                    ))}
+                    {getTodayItems().length === 0 && (
+                      <p className="text-sm text-gray-500 text-center py-4">Нет запланированных задач</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {widgets.find(w => w.type === 'timeline' && w.enabled) && (viewType === 'week' || viewType === 'day') && (
+              <Card className="shadow-lg animate-scale-in">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Icon name="Clock" size={20} />
+                    Временная шкала
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {getTodayItems().map((item, index) => (
+                      <div key={item.id} className="flex gap-3">
+                        <div className="flex flex-col items-center">
+                          <div className={`w-3 h-3 rounded-full ${
+                            item.type === 'event' ? 'bg-blue-500' :
+                            item.type === 'task' ? 'bg-green-500' : 'bg-purple-500'
+                          }`} />
+                          {index < getTodayItems().length - 1 && (
+                            <div className="w-0.5 h-full bg-gray-300 my-1" />
+                          )}
+                        </div>
+                        <div className="flex-1 pb-4">
+                          <div className="text-xs text-gray-500 mb-1">{item.time || 'Без времени'}</div>
+                          <div className="font-medium text-sm">{item.title}</div>
+                          {item.description && (
+                            <div className="text-xs text-gray-600 mt-1">{item.description}</div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {widgets.find(w => w.type === 'upcoming' && w.enabled) && viewType === 'month' && (
               <Card className="shadow-lg animate-scale-in">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -413,38 +671,6 @@ const Index = () => {
                         </div>
                       ))
                     )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {widgets.find(w => w.type === 'weather' && w.enabled) && (
-              <Card className="shadow-lg animate-scale-in">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Icon name="Cloud" size={20} />
-                    Погода
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-center space-y-2">
-                    <div className="text-5xl">☀️</div>
-                    <div className="text-3xl font-bold">22°C</div>
-                    <div className="text-sm text-gray-600">Солнечно, легкий ветер</div>
-                    <div className="grid grid-cols-3 gap-2 pt-3 text-xs">
-                      <div className="p-2 bg-gray-50 rounded">
-                        <div className="text-gray-500">Влажность</div>
-                        <div className="font-semibold">65%</div>
-                      </div>
-                      <div className="p-2 bg-gray-50 rounded">
-                        <div className="text-gray-500">Ветер</div>
-                        <div className="font-semibold">12 км/ч</div>
-                      </div>
-                      <div className="p-2 bg-gray-50 rounded">
-                        <div className="text-gray-500">UV</div>
-                        <div className="font-semibold">5</div>
-                      </div>
-                    </div>
                   </div>
                 </CardContent>
               </Card>
